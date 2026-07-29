@@ -1,8 +1,9 @@
 // lapse — a tiny time machine for any folder
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-only
 
 #include "sha256.hpp"
 
+#include <algorithm>
 #include <cstring>
 
 namespace lapse {

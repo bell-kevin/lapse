@@ -1,49 +1,50 @@
-Thank you for your interest in contributing to this project!
+# Contributing to lapse
 
-This project welcomes contributions from anyone, regardless of skill level or experience. Here are some guidelines to help you get started:
+Thank you for helping improve `lapse`. Bug reports, documentation fixes, tests,
+and focused code changes are all welcome.
 
-## How to contribute
+## Before changing code
 
-    1. Fork the repository
-    2. Make your changes
-    3. Submit a pull request
+Search the [issue tracker](https://github.com/bell-kevin/lapse/issues) for an
+existing report. For a substantial behavior or format change, open an issue
+first so the approach can be discussed before implementation.
 
-### Fork the repository
+Do not report vulnerabilities in a public issue. Follow
+[SECURITY.md](SECURITY.md) instead.
 
-To contribute to this project, you'll first need to create a copy of the repository in your own GitHub account. This is called "forking" the repository.
+## Build and test
 
-To fork the repository, click the "Fork" button in the upper-right corner of the repository page. This will create a new copy of the repository in your account.
+The project requires a C++17 compiler; its integration tests require
+Python 3.9+. The shortest local validation path is:
 
-### Make your changes
+```sh
+make
+make test
+```
 
-Once you've forked the repository, you can make changes to the code or documentation.
+The equivalent CMake path is:
 
-Before you start making changes, be sure to read the project's README file and any relevant documentation to get an understanding of the project's goals and guidelines.
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure --no-tests=error
+```
 
-When making changes, be sure to follow the project's coding style and guidelines. If you're unsure about something, feel free to open an issue or ask for help in the project's discussion forum.
+If a change affects the repository structure or documentation inventory,
+regenerate and verify the architecture diagram:
 
-### Submit a pull request
+```sh
+python3 scripts/generate_architecture_diagram.py
+python3 scripts/generate_architecture_diagram.py --check
+```
 
-When you're ready to submit your changes, you'll need to create a pull request (PR).
+## Pull requests
 
-To create a PR, go to the original repository and click the "New pull request" button. You'll be asked to select the branch containing your changes and provide a brief description of what you changed.
+- Keep each pull request focused on one problem.
+- Match the style and error-handling conventions of the surrounding code.
+- Add or update tests for user-visible behavior.
+- Run the relevant build, integration test, and diagram check before submitting.
+- Explain the motivation, behavior change, and validation in the description.
 
-Once you've submitted your PR, the project maintainers will review your changes and provide feedback. If everything looks good, your changes will be merged into the project.
-
-### Guidelines for contributions
-
-Here are some general guidelines for contributing to this project:
-
-    - Be respectful and professional in all interactions with other contributors.
-    
-    - Follow the project's coding style and guidelines.
-    
-    - Test your changes thoroughly before submitting a PR.
-    
-    - Provide clear and detailed descriptions of your changes.
-    
-    - Be open to feedback and willing to make changes based on feedback.
-    
-    - If you're unsure about something, don't hesitate to ask for help.
-
-Thank you for your interest in contributing to this project! We look forward to working with you.
+By contributing, you agree that your contribution is licensed under the
+repository's [AGPL-3.0-only license](LICENSE).

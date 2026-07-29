@@ -1,33 +1,48 @@
-name: CI (Generic)
+name: CI
 
 on:
   pull_request:
   push:
     branches: ["main"]
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
-  sanity:
-    runs-on: ubuntu-latest
+  build-and-test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+          - windows-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Basic repo checks
-        run: |
-          set -euo pipefail
-          echo "Branch: ${GITHUB_REF}"
-          test -f README.md || (echo "Missing README.md" && exit 1)
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-      - name: Lightweight secret pattern scan (best-effort)
-        run: |
-          set -euo pipefail
-          # This is NOT a full secret scanner; it's a beginner-friendly tripwire.
-          # Add more patterns as you like.
-          if grep -RIn --exclude-dir=.git --exclude-dir=node_modules \
-            -E "(AWS_SECRET_ACCESS_KEY|BEGIN PRIVATE KEY|xox[baprs]-|ghp_[A-Za-z0-9]{20,})" .; then
-            echo "Potential secret detected. Remove it before merging."
-            exit 1
-          fi
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure --no-tests=error
+
+      - name: Verify install rules
+        run: cmake --install build --config Release --prefix install
+
+      - name: Verify Makefile build
+        if: runner.os == 'Linux'
+        run: make clean test

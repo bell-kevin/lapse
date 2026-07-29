@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: AGPL-3.0-only
 """Generate a Mermaid architecture diagram from repository contents."""
 from __future__ import annotations
 
 import argparse
+import difflib
+import hashlib
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
@@ -42,10 +45,20 @@ CODE_EXTENSIONS = {
     ".php": "PHP",
     ".c": "C",
     ".h": "C/C++",
+    ".hh": "C/C++",
+    ".hpp": "C/C++",
+    ".hxx": "C/C++",
+    ".cc": "C++",
     ".cpp": "C++",
+    ".cxx": "C++",
     ".cs": "C#",
     ".sh": "Shell",
     ".sql": "SQL",
+}
+
+CODE_FILENAMES = {
+    "CMakeLists.txt": "CMake",
+    "Makefile": "Make",
 }
 
 IMPORT_PATTERNS = [
@@ -78,7 +91,7 @@ def safe_read(path: Path) -> str:
 
 
 def iter_repo_files(root: Path) -> Iterable[Path]:
-    for path in sorted(root.rglob("*")):
+    for path in sorted(root.rglob("*"), key=lambda item: item.relative_to(root).as_posix()):
         if path.is_file() and not should_skip(path.relative_to(root)):
             yield path
 
@@ -91,7 +104,9 @@ def component_for(path: Path) -> str:
 
 
 def sanitize_node_id(name: str) -> str:
-    return "n_" + re.sub(r"[^a-zA-Z0-9_]", "_", name)
+    slug = re.sub(r"[^a-zA-Z0-9_]", "_", name)
+    digest = hashlib.sha256(name.encode("utf-8")).hexdigest()[:10]
+    return f"n_{slug}_{digest}"
 
 
 def detect_dependencies(files: list[FileInfo]) -> Counter[tuple[str, str]]:
@@ -140,19 +155,26 @@ def build_diagram(files: list[FileInfo], docs: list[Path], deps: Counter[tuple[s
         lang_counts = Counter(f.language for f in component_files)
         top_languages = sorted(lang_counts.items(), key=lambda item: (-item[1], item[0]))[:2]
         summary = ", ".join(f"{lang}:{count}" for lang, count in top_languages)
-        label = f"{component}\\n{len(component_files)} files\\n{summary or 'mixed'}"
+        file_count = len(component_files)
+        noun = "file" if file_count == 1 else "files"
+        label = f"{component}\\n{file_count} {noun}\\n{summary or 'mixed'}"
         lines.append(f"    {node}[\"{label}\"]")
         lines.append(f"    repo --> {node}")
 
     if docs:
         lines.append("    docs[(Documentation)]")
         lines.append("    repo --> docs")
-        for doc in sorted(docs)[:8]:
-            doc_id = sanitize_node_id("doc_" + doc.name)
-            lines.append(f"    {doc_id}[\"{doc.name}\"]")
+        for doc in sorted(docs, key=lambda item: item.as_posix())[:8]:
+            doc_path = doc.as_posix()
+            doc_id = sanitize_node_id("doc_" + doc_path)
+            lines.append(f"    {doc_id}[\"{doc_path}\"]")
             lines.append(f"    docs --> {doc_id}")
 
-    for (src, dst), weight in deps.most_common(30):
+    sorted_deps = sorted(
+        deps.items(),
+        key=lambda item: (-item[1], item[0][0], item[0][1]),
+    )
+    for (src, dst), weight in sorted_deps[:30]:
         src_id = sanitize_node_id(src)
         dst_id = sanitize_node_id(dst)
         lines.append(f"    {src_id} -. {weight} refs .-> {dst_id}")
@@ -173,9 +195,9 @@ def main() -> int:
     for abs_path in iter_repo_files(ROOT):
         rel_path = abs_path.relative_to(ROOT)
         ext = rel_path.suffix.lower()
-        if ext in {".md", ".rst", ".adoc", ".txt"}:
+        if ext in {".md", ".rst", ".adoc"}:
             docs.append(rel_path)
-        language = CODE_EXTENSIONS.get(ext)
+        language = CODE_FILENAMES.get(rel_path.name, CODE_EXTENSIONS.get(ext))
         if language:
             file_infos.append(
                 FileInfo(path=rel_path, component=component_for(rel_path), language=language)
@@ -189,12 +211,24 @@ def main() -> int:
     if args.check:
         if existing != expected:
             print("architecture.mmd is out of date. Run scripts/generate_architecture_diagram.py")
+            print(
+                "".join(
+                    difflib.unified_diff(
+                        existing.splitlines(keepends=True),
+                        expected.splitlines(keepends=True),
+                        fromfile="docs/architecture.mmd",
+                        tofile="generated architecture.mmd",
+                    )
+                ),
+                end="",
+            )
             return 1
         print("architecture.mmd is up to date.")
         return 0
 
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text(expected, encoding="utf-8")
+    with OUTPUT.open("w", encoding="utf-8", newline="\n") as output:
+        output.write(expected)
     print(f"Wrote {OUTPUT.relative_to(ROOT)}")
     return 0
 

@@ -2,11 +2,12 @@
 
 # lapse
 
-**A tiny time machine for any folder.** One binary, zero config, zero dependencies.
+**A tiny time machine for any folder.** One executable, zero config, and no
+third-party libraries.
 
 ```
 $ lapse snap -m "before I try something stupid"
-✓ a3f9c12b04de  1,204 files (312.5 MB), 9 new objects (1.1 MB stored), 41 ms
+✓ a3f9c12b04de  1204 files (312.5 MB), 9 new objects (1.1 MB stored), 1284 ms
 
 $ lapse restore a3f9 thesis.docx --force
 ✓ thesis.docx
@@ -21,15 +22,15 @@ beyond `snap` and `restore`.
 
 ## Why it's different
 
-- **Zero dependencies.** Pure C++17 and the standard library. No libgit2, no
-  SQLite, no OpenSSL — `lapse` ships its own 150-line SHA-256. It compiles to
-  a single static binary in about a second.
+- **No third-party libraries.** `lapse` uses C++17 and the standard library.
+  There is no libgit2, SQLite, or OpenSSL dependency; SHA-256 is implemented
+  in-tree. A normal C++17 toolchain produces one native executable.
 - **Content-addressed & deduplicated.** Every file is stored once, named by
   its SHA-256. A hundred snapshots of a 1 GB folder where one file changes
   costs you 1 GB plus the changed bytes.
-- **Fast by construction.** Snapshots reuse hashes from the previous manifest
-  when size + mtime are unchanged, so re-snapshotting a 100 MB / 2,000-file
-  tree takes ~30 ms and stores only what changed.
+- **Content-correct.** Every snapshot hashes the current bytes instead of
+  trusting timestamps, so same-size edits cannot be missed. The object store
+  still writes each distinct file content only once.
 - **Unkillable format.** Snapshots are plain-text manifests; objects are
   plain files. If this binary vanished tomorrow, you could recover everything
   with `cat`, `grep`, and `cp`. Your data is never held hostage by a format.
@@ -40,8 +41,10 @@ beyond `snap` and `restore`.
 ## Quick start
 
 ```sh
-git clone https://github.com/you/lapse && cd lapse
-make && sudo make install        # or: cmake -B build && cmake --build build
+git clone https://github.com/bell-kevin/lapse.git
+cd lapse
+make test
+sudo make install
 
 cd ~/Documents/thesis
 lapse snap -m "draft 1"          # first snap auto-initializes .lapse/
@@ -104,7 +107,7 @@ folder:
 A snapshot is just a manifest — one line per file:
 
 ```
-lapse 1
+lapse 2
 id d2bac4ecb173
 time 1718100000
 message edited notes
@@ -113,11 +116,13 @@ a948904f…	644	1718099991	12	notes.txt
 7364d374…	644	1718099812	13	src/main.cpp
 ```
 
-Taking a snapshot means: walk the tree, hash anything whose size or mtime
-changed, copy unseen objects into the store, write a manifest. Restoring
-means: read the manifest, copy objects back out, reapply permissions and
-mtimes. That's the whole trick — and it's why the on-disk format will still
-be readable in twenty years.
+Taking a snapshot means: walk the tree, hash every tracked file, copy unseen
+objects into the store, and write a manifest. Restoring means: read and
+validate the manifest, verify its objects, stage the selected files, then
+reapply permissions and mtimes. The contents remain ordinary files that can
+also be recovered with standard filesystem tools. Version 2 manifests use a
+portable path subset; historical version 1 manifests remain readable with
+their original platform-native path semantics.
 
 ## How it compares
 
@@ -127,7 +132,7 @@ be readable in twenty years.
 | Binary files | ✓ great | poor | ✓ | ✓ |
 | Zero setup / zero learning curve | ✓ | ✗ | ~ | ~ |
 | Local & private | ✓ | ✓ | ✓ | ✗ |
-| Single dependency-free binary | ✓ | ✗ | ✗ | ✗ |
+| Single native executable | ✓ | ✗ | ✗ | ✗ |
 | Deduplicated storage | ✓ | ✓ | hardlinks | n/a |
 
 `lapse` is not a backup tool (the history lives next to the data — pair it
@@ -136,57 +141,77 @@ the missing *undo button for your filesystem*.
 
 ## Building
 
-Requires any C++17 compiler. Nothing else.
+Building the executable requires CMake 3.20+ or a C++17 compiler and Make.
+Running the integration tests also requires Python 3.9+.
+
+With the Makefile:
 
 ```sh
-make                # plain Makefile
-# or
-cmake -B build && cmake --build build
-# run the test suite
-./tests/smoke.sh ./lapse
+make
+make test
+sudo make install
 ```
 
-Tested on Linux and macOS; Windows should work via MSVC/MinGW (CI welcome!).
+Or with CMake:
+
+```sh
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+ctest --test-dir build -C Release --output-on-failure --no-tests=error
+sudo cmake --install build --config Release
+```
+
+The application itself has no third-party runtime dependencies. CI builds and
+tests it on Linux, macOS, and Windows.
 
 ## Limitations & roadmap
 
 - Symbolic links and empty directories are currently skipped.
+- Run only one mutating `lapse` command per repository at a time, and do not
+  modify a restore destination concurrently. Repository locking and
+  handle-relative restore operations are not implemented yet.
+- File timestamp encoding is implementation-specific, so restore metadata with
+  the same platform/toolchain that created the snapshot. File contents remain
+  portable.
+- `watch` hashes every tracked file on each polling interval to avoid missing
+  content changes with preserved timestamps.
 - Objects are stored uncompressed (simple > clever, for now). Optional zstd
   compression is on the roadmap.
 - Planned: `lapse mount` (browse history as a FUSE filesystem),
   inotify-based `watch` on Linux, block-level chunking for huge files that
   change a little (databases, VM images).
 
-Contributions for any of the above are very welcome — the codebase is two
+Contributions for any of the above are very welcome — the codebase is three
 source files and deliberately easy to read end-to-end.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+GNU Affero General Public License v3.0 only
+([AGPL-3.0-only](LICENSE)).
 
 
 --------------------------------------------------------------------------------------------------------------------------
 
 ## Automated architecture diagram
 
-This template now includes an automated architecture diagram process:
+The repository includes an automated architecture diagram process:
 
 - `scripts/generate_architecture_diagram.py` scans source files and docs and writes `docs/architecture.mmd`.
-- `.github/workflows/update-architecture-diagram.yml` regenerates and commits `docs/architecture.mmd` on every push.
+- `.github/workflows/update-architecture-diagram.yml` regenerates and commits `docs/architecture.mmd` after changes land on `main`.
 - `.github/workflows/check-architecture-diagram.yml` ensures pull requests have an up-to-date architecture diagram.
 
 ### Local usage
 
 ```bash
-python scripts/generate_architecture_diagram.py
-python scripts/generate_architecture_diagram.py --check
+python3 scripts/generate_architecture_diagram.py
+python3 scripts/generate_architecture_diagram.py --check
 ```
 
 --------------------------------------------------------------------------------------------------------------------------
 == We're Using GitHub Under Protest ==
 
 This project is currently hosted on GitHub.  This is not ideal; GitHub is a
-proprietary, trade-secret system that is not Free and Open Souce Software
+proprietary, trade-secret system that is not Free and Open Source Software
 (FOSS).  We are deeply concerned about using a proprietary system like GitHub
 to develop our FOSS project. I have a [website](https://bellKevin.me) where the
 project contributors are actively discussing how we can move away from GitHub

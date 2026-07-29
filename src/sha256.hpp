@@ -1,5 +1,5 @@
 // lapse — a tiny time machine for any folder
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: AGPL-3.0-only
 //
 // Minimal, dependency-free SHA-256 (FIPS 180-4). Used to content-address
 // file objects and snapshot manifests.

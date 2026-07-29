@@ -1,0 +1,8 @@
+/build/
+/install/
+/.lapse/
+/lapse
+/lapse.exe
+
+__pycache__/
+*.py[cod]

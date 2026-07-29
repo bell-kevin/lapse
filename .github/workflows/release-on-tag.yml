@@ -11,37 +11,71 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Checkout (full history for tags)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Validate SemVer tag
         id: semver
         run: |
           set -euo pipefail
-          TAG="${GITHUB_REF_NAME}"   # e.g., v1.2.3
+          TAG="${GITHUB_REF_NAME}"
           echo "Tag is: $TAG"
 
-          # Strict-ish SemVer: vMAJOR.MINOR.PATCH with optional prerelease/build
-          # Examples allowed:
-          # v1.2.3
-          # v1.2.3-alpha.1
-          # v1.2.3-rc.1+build.7
-          if [[ ! "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
-            echo "Tag '$TAG' is not valid SemVer (expected vMAJOR.MINOR.PATCH...)."
+          SEMVER_PATTERN='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+          if [[ ! "$TAG" =~ $SEMVER_PATTERN ]]; then
+            echo "Tag '$TAG' is not a stable SemVer tag (expected vMAJOR.MINOR.PATCH)."
             exit 1
           fi
 
+          VERSION="${TAG#v}"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Create source snapshot zip (optional)
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Verify source and binary versions
         run: |
           set -euo pipefail
-          TAG="${{ steps.semver.outputs.tag }}"
-          zip -r "source-${TAG}.zip" . \
-            -x ".git/*" ".github/*/cache/*" "node_modules/*" "**/bin/*" "**/obj/*"
+          EXPECTED="${{ steps.semver.outputs.version }}"
+          CMAKE_VERSION="$(sed -nE 's/^[[:space:]]*project\(lapse[[:space:]]+VERSION[[:space:]]+([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' CMakeLists.txt)"
+          BINARY_OUTPUT="$(./build/lapse --version)"
+          BINARY_VERSION="${BINARY_OUTPUT#lapse }"
+
+          if [[ "$CMAKE_VERSION" != "$EXPECTED" ]]; then
+            echo "Tag version $EXPECTED does not match CMake project version $CMAKE_VERSION."
+            exit 1
+          fi
+          if [[ "$BINARY_OUTPUT" != "lapse $BINARY_VERSION" || "$BINARY_VERSION" != "$EXPECTED" ]]; then
+            echo "Tag version $EXPECTED does not match binary output '$BINARY_OUTPUT'."
+            exit 1
+          fi
+
+      - name: Run integration tests
+        run: ctest --test-dir build -C Release --output-on-failure --no-tests=error
+
+      - name: Create reproducible source archive
+        id: archive
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.semver.outputs.version }}"
+          ARCHIVE="lapse-${VERSION}.tar.gz"
+          git archive --format=tar --prefix="lapse-${VERSION}/" "$GITHUB_SHA" |
+            gzip -n > "$ARCHIVE"
+          sha256sum "$ARCHIVE" > "${ARCHIVE}.sha256"
+          echo "path=$ARCHIVE" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -49,5 +83,7 @@ jobs:
           tag_name: ${{ steps.semver.outputs.tag }}
           name: ${{ steps.semver.outputs.tag }}
           generate_release_notes: true
+          fail_on_unmatched_files: true
           files: |
-            source-${{ steps.semver.outputs.tag }}.zip
+            ${{ steps.archive.outputs.path }}
+            ${{ steps.archive.outputs.path }}.sha256
