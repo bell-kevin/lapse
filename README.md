@@ -189,24 +189,6 @@ source files and deliberately easy to read end-to-end.
 GNU Affero General Public License v3.0 only
 ([AGPL-3.0-only](LICENSE)).
 
-
---------------------------------------------------------------------------------------------------------------------------
-
-## Automated architecture diagram
-
-The repository includes an automated architecture diagram process:
-
-- `scripts/generate_architecture_diagram.py` scans source files and docs and writes `docs/architecture.mmd`.
-- `.github/workflows/update-architecture-diagram.yml` regenerates and commits `docs/architecture.mmd` after changes land on `main`.
-- `.github/workflows/check-architecture-diagram.yml` ensures pull requests have an up-to-date architecture diagram.
-
-### Local usage
-
-```bash
-python3 scripts/generate_architecture_diagram.py
-python3 scripts/generate_architecture_diagram.py --check
-```
-
 --------------------------------------------------------------------------------------------------------------------------
 == We're Using GitHub Under Protest ==
 
